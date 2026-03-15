@@ -1,9 +1,9 @@
 node_modules/
 dist/
 build/
+bin/
 .DS_Store
 coverage/
 *.log
 .env
 .env.*
-
