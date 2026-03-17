@@ -69,6 +69,42 @@ Output width and height are a shared setting:
 
 This keeps browser output and NDI output matched at all times.
 
+## Using this as a generative visual storytelling kit
+
+The current repository should be treated as a rendering kit and delivery shell rather than a finished artwork system.
+
+Use it like this:
+
+1. Run `npm start` when you want the fastest browser-only development loop.
+2. Open `/control` for transport controls and `/output` for the actual stage surface.
+3. Build the visual storytelling system in `public/output.js`, because that file owns the output canvas.
+4. Switch to `npm run start:electron` when you need the Electron control window and NDI output.
+
+The practical division of responsibility is:
+
+- `public/output.js` is the performance surface. Put scene timing, animation, drawing, transitions, procedural image generation, text treatment, and composition logic here.
+- `public/output.html` is the minimal output shell. Keep it lean unless the renderer truly needs more DOM structure.
+- `public/control.html` and `public/control.js` are the operator surface. Add knobs, toggles, cues, scene selectors, or debug readouts here.
+- `electron/server.js` is the shared control API. Extend it when the control surface needs to send structured state into the output system.
+- `electron/ndi-manager.js` should usually stay transport-focused. Its job is to mirror `/output` into NDI, not to own show logic.
+
+Recommended development pattern:
+
+- Treat `/output` as the single source of truth for what an audience should see.
+- Keep rendering deterministic from explicit state where possible so browser preview and NDI output stay visually aligned.
+- Use the existing output width and height settings as the base render resolution and make your drawing code respond to those dimensions.
+- Show a meaningful idle, loading, blackout, or standby frame when output is not active.
+- Iterate in the browser first, then validate in Electron when timing, offscreen rendering, or NDI delivery matters.
+
+When you need more than the current baseline controls:
+
+- Add UI fields in `public/control.html`.
+- Read and send their values from `public/control.js`.
+- Add or extend `/api/*` routes in `electron/server.js`.
+- Read that state from the output renderer using polling, fetch-on-cue, or a future push channel if you decide to add one.
+
+In short: build the artwork in `public/output.js`, build the operator experience in `public/control.js`, and use Electron plus NDI only when you need to deliver the browser-rendered stage to external displays or other video systems.
+
 ## NDI streaming
 
 NDI streaming is available from the Electron control app, not from the plain browser preview.
