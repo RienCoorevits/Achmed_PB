@@ -1,15 +1,18 @@
-# De Avonturen van Prins Achmed
+# NDI enabled realtime video development kit
 
-Rebuild baseline for a procedural generative storytelling app inspired by the 1926 film *The Adventures of Prince Achmed*.
-
-The earlier story-generation scaffold has been removed. The project now keeps only the parts that are still valid for the next implementation pass:
+Rebuild baseline kit for generative video development.
 
 - Electron control window
 - Browser-accessible `/output` route
 - Vite middleware dev server on the same app origin for HTML/CSS/JS live updates
-- Minimally styled control UI with browser-default buttons and inputs
+- Minimally styled control UI
 - Shared output width and height config
 - Optional NDI sender path driven from the Electron control app
+
+## Requirements
+
+- NDI SDK for Apple installed under `/Library/NDI SDK for Apple`
+- Xcode command line toolchain available so `clang` can build the helper
 
 ## Run
 
@@ -48,16 +51,12 @@ npm run start:network
 
 ## Current baseline
 
-The control window now only handles:
+The control window now handles:
 
 - control and output routing
 - output start and stop
 - output width and height
 - NDI source name and frame rate
-
-The control window intentionally uses plain DOM elements with light page-level styling. Buttons and inputs stay browser-default, the layout is a five-column shell, and the currently active controls live in the first column.
-
-`Start Output` now applies the current width and height values, marks the output as active, and starts NDI in the Electron control app. `Stop Output` deactivates the output and stops NDI.
 
 The output route is only a single HTML canvas. When output is inactive it shows a loading screen. When output is active it switches to a blank black frame at the started size. This keeps the output surface clean while the real rendering system is redeveloped.
 
@@ -81,11 +80,6 @@ NDI streaming is available from the Electron control app, not from the plain bro
 - The helper source lives in [native/ndi_sender.c](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/native/ndi_sender.c)
 - The build script lives in [scripts/build-ndi-helper.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/scripts/build-ndi-helper.js)
 - The Electron-side controller lives in [electron/ndi-manager.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/electron/ndi-manager.js)
-
-Requirements on this machine:
-
-- NDI SDK for Apple installed under `/Library/NDI SDK for Apple`
-- Xcode command line toolchain available so `clang` can build the helper
 
 ## Electron note
 
