@@ -1,15 +1,25 @@
+const OUTPUT_PRESET_STORAGE_KEY = 'achmed.output-presets';
+const BUILTIN_PRESETS = [
+  { height: 720, id: 'builtin:hd', name: 'HD 1280x720', width: 1280 },
+  { height: 1080, id: 'builtin:fullhd', name: 'Full HD 1920x1080', width: 1920 },
+  { height: 2160, id: 'builtin:uhd', name: 'UHD 3840x2160', width: 3840 },
+  { height: 1920, id: 'builtin:portrait-hd', name: 'Portrait 1080x1920', width: 1080 }
+];
+
 const elements = {
   controlUrl: document.querySelector('#control-url'),
+  deleteOutputPreset: document.querySelector('#delete-output-preset'),
   ndiFpsInput: document.querySelector('#ndi-fps-input'),
-  ndiMessage: document.querySelector('#ndi-message'),
-  ndiReason: document.querySelector('#ndi-reason'),
   ndiSourceInput: document.querySelector('#ndi-source-input'),
-  ndiStatus: document.querySelector('#ndi-status'),
+  ndiState: document.querySelector('#ndi-state'),
   outputHeightInput: document.querySelector('#output-height-input'),
+  outputPresetName: document.querySelector('#output-preset-name'),
+  outputPresetSelect: document.querySelector('#output-preset-select'),
   outputStatus: document.querySelector('#output-status'),
   outputSummary: document.querySelector('#output-summary'),
   outputUrl: document.querySelector('#output-url'),
   outputWidthInput: document.querySelector('#output-width-input'),
+  saveOutputPreset: document.querySelector('#save-output-preset'),
   startOutput: document.querySelector('#start-output'),
   stopOutput: document.querySelector('#stop-output')
 };
@@ -21,6 +31,7 @@ let outputState = {
   height: Number(elements.outputHeightInput.value),
   width: Number(elements.outputWidthInput.value)
 };
+let outputPresets = [];
 
 function syncInputValue(input, value) {
   if (document.activeElement === input) {
@@ -28,6 +39,72 @@ function syncInputValue(input, value) {
   }
 
   input.value = value;
+}
+
+function getCustomPresets() {
+  try {
+    const rawValue = window.localStorage.getItem(OUTPUT_PRESET_STORAGE_KEY);
+
+    if (!rawValue) {
+      return [];
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+
+    if (!Array.isArray(parsedValue)) {
+      return [];
+    }
+
+    return parsedValue
+      .filter((preset) => (
+        preset &&
+        typeof preset.id === 'string' &&
+        typeof preset.name === 'string' &&
+        Number.isFinite(Number(preset.width)) &&
+        Number.isFinite(Number(preset.height))
+      ))
+      .map((preset) => ({
+        id: preset.id,
+        name: preset.name,
+        width: Number(preset.width),
+        height: Number(preset.height)
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomPresets(customPresets) {
+  window.localStorage.setItem(OUTPUT_PRESET_STORAGE_KEY, JSON.stringify(customPresets));
+}
+
+function loadOutputPresets() {
+  outputPresets = [...BUILTIN_PRESETS, ...getCustomPresets()];
+}
+
+function getSelectedPreset() {
+  return outputPresets.find((preset) => preset.id === elements.outputPresetSelect.value) ?? null;
+}
+
+function setOutputDimensions(width, height) {
+  elements.outputWidthInput.value = String(width);
+  elements.outputHeightInput.value = String(height);
+}
+
+function renderPresetOptions() {
+  const selectedValue = elements.outputPresetSelect.value;
+  const optionMarkup = outputPresets
+    .map((preset) => `<option value="${preset.id}">${preset.name}</option>`)
+    .join('');
+
+  elements.outputPresetSelect.innerHTML = `<option value="">Select preset</option>${optionMarkup}`;
+
+  if (outputPresets.some((preset) => preset.id === selectedValue)) {
+    elements.outputPresetSelect.value = selectedValue;
+  }
+
+  const selectedPreset = getSelectedPreset();
+  elements.deleteOutputPreset.disabled = !selectedPreset || selectedPreset.id.startsWith('builtin:');
 }
 
 async function fetchJson(url, options) {
@@ -81,10 +158,15 @@ function renderNdiStatus() {
     return;
   }
 
-  elements.ndiStatus.textContent = ndiStatus.available ? (ndiStatus.running ? 'Streaming' : 'Ready') : 'Unavailable';
-  elements.ndiReason.textContent = ndiStatus.reason ?? 'idle';
-  elements.ndiMessage.textContent =
-    ndiStatus.lastError ?? (ndiStatus.available ? 'NDI sender is idle.' : 'NDI requires the Electron control app.');
+  if (ndiStatus.lastError) {
+    elements.ndiState.textContent = ndiStatus.lastError;
+  } else if (!ndiStatus.available) {
+    elements.ndiState.textContent = 'Unavailable';
+  } else if (ndiStatus.running) {
+    elements.ndiState.textContent = 'Streaming';
+  } else {
+    elements.ndiState.textContent = 'Ready';
+  }
 
   if (typeof ndiStatus.sourceName === 'string') {
     syncInputValue(elements.ndiSourceInput, ndiStatus.sourceName);
@@ -97,6 +179,7 @@ function renderNdiStatus() {
 
 function render() {
   renderConfig();
+  renderPresetOptions();
   renderOutputState();
   renderNdiStatus();
 }
@@ -113,9 +196,68 @@ async function refreshStatuses() {
 }
 
 async function initialise() {
+  loadOutputPresets();
   currentConfig = await fetchJson('/api/config');
   await refreshStatuses();
 }
+
+elements.outputPresetSelect.addEventListener('change', () => {
+  const selectedPreset = getSelectedPreset();
+
+  if (!selectedPreset) {
+    return;
+  }
+
+  setOutputDimensions(selectedPreset.width, selectedPreset.height);
+  elements.outputPresetName.value = selectedPreset.name;
+  renderPresetOptions();
+});
+
+elements.saveOutputPreset.addEventListener('click', () => {
+  const name = elements.outputPresetName.value.trim();
+  const width = Number(elements.outputWidthInput.value);
+  const height = Number(elements.outputHeightInput.value);
+
+  if (!name || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return;
+  }
+
+  const customPresets = getCustomPresets();
+  const presetId = `custom:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || Date.now()}`;
+  const existingIndex = customPresets.findIndex((preset) => preset.name.toLowerCase() === name.toLowerCase());
+  const nextPreset = {
+    id: existingIndex >= 0 ? customPresets[existingIndex].id : presetId,
+    name,
+    width,
+    height
+  };
+
+  if (existingIndex >= 0) {
+    customPresets.splice(existingIndex, 1, nextPreset);
+  } else {
+    customPresets.push(nextPreset);
+  }
+
+  saveCustomPresets(customPresets);
+  loadOutputPresets();
+  elements.outputPresetSelect.value = nextPreset.id;
+  renderPresetOptions();
+});
+
+elements.deleteOutputPreset.addEventListener('click', () => {
+  const selectedPreset = getSelectedPreset();
+
+  if (!selectedPreset || selectedPreset.id.startsWith('builtin:')) {
+    return;
+  }
+
+  const customPresets = getCustomPresets().filter((preset) => preset.id !== selectedPreset.id);
+  saveCustomPresets(customPresets);
+  loadOutputPresets();
+  elements.outputPresetSelect.value = '';
+  elements.outputPresetName.value = '';
+  renderPresetOptions();
+});
 
 elements.startOutput.addEventListener('click', async () => {
   const response = await postJson('/api/output/start', {

@@ -6,7 +6,7 @@ body {
 .control-page {
   font: 14px/1.5 sans-serif;
   color: #fff;
-  background: #000;
+  background: #1d1d1d;
 }
 
 .control-shell {
@@ -25,9 +25,9 @@ body {
 }
 
 .control-section {
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #333;
+  margin-bottom: 0px;
+  padding-bottom: 0px;
+  border-bottom: 1px solid #ffffff;
 }
 
 .control-section:last-child {
@@ -37,6 +37,14 @@ body {
 .control-page h1,
 .control-page h2 {
   margin: 0 0 10px;
+}
+
+.control-page h1 {
+  font-size: 24px;
+}
+
+.control-page h2 {
+  font-size: 18px;
 }
 
 .control-page p {
@@ -82,7 +90,7 @@ body {
   background: #000;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 400px) {
   .control-shell {
     grid-template-columns: 1fr;
   }

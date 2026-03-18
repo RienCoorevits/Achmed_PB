@@ -58,7 +58,7 @@ The control window now handles:
 - output width and height
 - NDI source name and frame rate
 
-The output route is only a single HTML canvas. When output is inactive it shows a loading screen. When output is active it switches to a blank black frame at the started size. This keeps the output surface clean while the real rendering system is redeveloped.
+The output route is only a single HTML canvas. When output is inactive it now shows a standby slate with a clear operator-facing idle message. When output is active it switches to a blank black frame at the started size. This keeps the output surface clean while the real rendering system is redeveloped.
 
 Output width and height are a shared setting:
 

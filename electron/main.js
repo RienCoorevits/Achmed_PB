@@ -22,10 +22,10 @@ function createControlWindow(url) {
   const controlWindow = new BrowserWindow({
     width: 1480,
     height: 920,
-    minWidth: 1180,
+    minWidth: 320,
     minHeight: 760,
     autoHideMenuBar: true,
-    title: 'Achmed Control',
+    title: 'NDI Control Panel',
     backgroundColor: '#11161b',
     webPreferences: {
       contextIsolation: true,

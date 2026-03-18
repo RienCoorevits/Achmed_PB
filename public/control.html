@@ -1,80 +1,101 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Achmed Control</title>
-    <link rel="stylesheet" href="/styles.css">
-  </head>
-  <body class="control-page">
-    <main class="control-shell">
-      <div class="control-column control-column-primary">
-        <section class="control-section">
-          <h1>Achmed Control</h1>
-        </section>
 
-        <section class="control-section">
-          <h2>Routing</h2>
-          <p>Control URL: <a id="control-url" href="#" target="_blank" rel="noreferrer"></a></p>
-          <p>Output URL: <a id="output-url" href="#" target="_blank" rel="noreferrer"></a></p>
-        </section>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NDI Development Kit</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
 
-        <section class="control-section">
-          <h2>Output Control</h2>
+<body class="control-page">
+  <main class="control-shell">
+    <div class="control-column control-column-primary">
+      <section class="control-section">
+        <h1>NDI Development Kit</h1>
+      </section>
+
+      <section class="control-section">
+        <h2>Routing</h2>
+        <p>Control URL: <a id="control-url" href="#" target="_blank" rel="noreferrer"></a></p>
+        <p>Output URL: <a id="output-url" href="#" target="_blank" rel="noreferrer"></a></p>
+      </section>
+
+      <section class="control-section">
+        <h2>Output Setup</h2>
+        <p>
+          <label>
+            Set Preset Name
+            <input id="output-preset-name" type="text" autocomplete="off" placeholder="e.g. 1080p Portrait">
+          </label>
+        </p>
+        <div class="field-row">
           <p>
-            <button id="start-output">Start Output</button>
-            <button id="stop-output">Stop Output</button>
+            <label>
+              Width
+              <input id="output-width-input" type="number" min="320" max="3840" step="1" value="1280">
+            </label>
           </p>
-          <p>Output Status: <strong id="output-status"></strong></p>
-        </section>
+          <p>
+            <label>
+              Height
+              <input id="output-height-input" type="number" min="180" max="2160" step="1" value="720">
+            </label>
+          </p>
+        </div>
+        <p>
+          <button id="save-output-preset">Save Preset</button>
+          <button id="delete-output-preset">Delete Preset</button>
+        </p>
+        <p>Canvas size: <span id="output-summary"></span></p>
+      </section>
 
-        <section class="control-section">
-          <h2>Output</h2>
-          <div class="field-row">
-            <p>
-              <label>
-                Width
-                <input id="output-width-input" type="number" min="320" max="3840" step="1" value="1280">
-              </label>
-            </p>
-            <p>
-              <label>
-                Height
-                <input id="output-height-input" type="number" min="180" max="2160" step="1" value="720">
-              </label>
-            </p>
-          </div>
-          <p>Canvas / NDI Size: <span id="output-summary"></span></p>
-        </section>
+      <section class="control-section">
+        <h2>Output Control</h2>
+        <p>
+          <label>
+            Select Output
+            <select id="output-preset-select">
+              <option value="">Select preset</option>
+            </select>
+          </label>
+        </p>
+        <p>
+          <button id="start-output">Start Output</button>
+          <button id="stop-output">Stop Output</button>
+        </p>
+        <p>Output Status: <strong id="output-status"></strong></p>
+      </section>
 
-        <section class="control-section">
-          <h2>NDI</h2>
-          <div class="field-row">
-            <p>
-              <label>
-                Source Name
-                <input id="ndi-source-input" type="text" value="Achmed Output" autocomplete="off">
-              </label>
-            </p>
-            <p>
-              <label>
-                FPS
-                <input id="ndi-fps-input" type="number" min="1" max="60" step="1" value="30">
-              </label>
-            </p>
-          </div>
-          <p>Status: <strong id="ndi-status"></strong></p>
-          <p>Mode: <strong id="ndi-reason"></strong></p>
-          <p>NDI Message: <span id="ndi-message"></span></p>
-        </section>
-      </div>
 
-      <div class="control-column" aria-hidden="true"></div>
-      <div class="control-column" aria-hidden="true"></div>
-      <div class="control-column" aria-hidden="true"></div>
-      <div class="control-column" aria-hidden="true"></div>
-    </main>
 
-    <script type="module" src="/control.js"></script>
-  </body>
+      <section class="control-section">
+        <h2>NDI</h2>
+        <div class="field-row">
+          <p>
+            <label>
+              Source Name
+              <input id="ndi-source-input" type="text" value="Achmed Output" autocomplete="off">
+            </label>
+          </p>
+          <p>
+            <label>
+              FPS
+              <input id="ndi-fps-input" type="number" min="1" max="60" step="1" value="30">
+            </label>
+          </p>
+        </div>
+        <p>NDI State: <strong id="ndi-state"></strong></p>
+      </section>
+    </div>
+
+    <div class="control-column" aria-hidden="true"></div>
+    <div class="control-column" aria-hidden="true"></div>
+    <div class="control-column" aria-hidden="true"></div>
+    <div class="control-column" aria-hidden="true"></div>
+  </main>
+
+  <script type="module" src="/control.js"></script>
+</body>
+
 </html>
