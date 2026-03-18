@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
+const LIBRARIES_DIR = path.join(ROOT_DIR, 'libraries');
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 
 const CONTENT_TYPES = {
@@ -68,6 +69,25 @@ async function serveViteHtml(vite, pathname, res) {
 }
 
 async function serveStaticFile(pathname, res) {
+  if (pathname.startsWith('/libraries/')) {
+    const relativePath = pathname.replace(/^\/libraries\//, '');
+    const safePath = path.normalize(relativePath);
+
+    if (safePath.startsWith('..')) {
+      return false;
+    }
+
+    const filePath = path.join(LIBRARIES_DIR, safePath);
+    const contents = await readFile(filePath);
+    const contentType = CONTENT_TYPES[path.extname(filePath)] ?? 'text/plain; charset=utf-8';
+
+    res.writeHead(200, {
+      'Content-Type': contentType
+    });
+    res.end(contents);
+    return true;
+  }
+
   const routes = new Map([
     ['/', path.join(PUBLIC_DIR, 'control.html')],
     ['/control', path.join(PUBLIC_DIR, 'control.html')],
@@ -240,6 +260,20 @@ export async function startServer({ host = '127.0.0.1', port = 3030, ndiControll
       }
 
       return json(res, 200, ndiController.getStatus());
+    }
+
+    if (requestUrl.pathname.startsWith('/libraries/')) {
+      try {
+        const served = await serveStaticFile(requestUrl.pathname, res);
+
+        if (served) {
+          return;
+        }
+      } catch {
+        return json(res, 500, {
+          error: 'Unable to read requested library file.'
+        });
+      }
     }
 
     if (dev) {

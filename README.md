@@ -4,6 +4,7 @@ Rebuild baseline kit for generative video development.
 
 - Electron control window
 - Browser-accessible `/output` route
+- Root `/libraries` folder for vendored browser-side libraries
 - Vite middleware dev server on the same app origin for HTML/CSS/JS live updates
 - Minimally styled control UI
 - Shared output width and height config
@@ -55,18 +56,16 @@ The control window now handles:
 
 - control and output routing
 - output start and stop
-- output width and height
 - output width and height presets
 - NDI source name and frame rate
 
-Paired controls inside a field row are laid out tightly next to each other instead of stretching across the full column width.
+The output route is only a single HTML canvas driven by p5.js. The current output renderer is a simple test sketch and no longer branches into a separate idle slate path inside `output.js`.
 
-The output route is only a single HTML canvas. When output is inactive it now shows a standby slate with a clear operator-facing idle message. When output is active it switches to a blank black frame at the started size. This keeps the output surface clean while the real rendering system is redeveloped.
+The output now includes a test p5.js sketch loaded from the custom [libraries](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries) folder. This is the reference pattern for adding more browser-side libraries to the project.
 
 Output width and height are a shared setting:
 
-- the values are read when `Start Output` is pressed
-- the output canvas internal size uses those started values
+- the output canvas internal size follows the current output width and height state
 - the hidden Electron offscreen renderer uses those same values
 - the NDI sender uses those same values
 
@@ -87,6 +86,7 @@ The practical division of responsibility is:
 
 - `public/output.js` is the performance surface. Put scene timing, animation, drawing, transitions, procedural image generation, text treatment, and composition logic here.
 - `public/output.html` is the minimal output shell. Keep it lean unless the renderer truly needs more DOM structure.
+- `libraries/` is the vendored browser-library area. Put custom frontend libraries here when they should be served at `/libraries/*`.
 - `public/control.html` and `public/control.js` are the operator surface. Add knobs, toggles, cues, scene selectors, or debug readouts here.
 - `electron/server.js` is the shared control API. Extend it when the control surface needs to send structured state into the output system.
 - `electron/ndi-manager.js` should usually stay transport-focused. Its job is to mirror `/output` into NDI, not to own show logic.
@@ -96,7 +96,6 @@ Recommended development pattern:
 - Treat `/output` as the single source of truth for what an audience should see.
 - Keep rendering deterministic from explicit state where possible so browser preview and NDI output stay visually aligned.
 - Use the existing output width and height settings as the base render resolution and make your drawing code respond to those dimensions.
-- Show a meaningful idle, loading, blackout, or standby frame when output is not active.
 - Iterate in the browser first, then validate in Electron when timing, offscreen rendering, or NDI delivery matters.
 
 When you need more than the current baseline controls:
@@ -107,6 +106,16 @@ When you need more than the current baseline controls:
 - Read that state from the output renderer using polling, fetch-on-cue, or a future push channel if you decide to add one.
 
 In short: build the artwork in `public/output.js`, build the operator experience in `public/control.js`, and use Electron plus NDI only when you need to deliver the browser-rendered stage to external displays or other video systems.
+
+## Libraries folder
+
+Files placed in [libraries](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries) are served by the app at `/libraries/*`.
+
+Current example:
+
+- [libraries/p5/p5.min.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries/p5/p5.min.js) is served at `/libraries/p5/p5.min.js`
+- [public/output.html](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.html) loads that file directly
+- [public/output.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.js) uses p5 to render the current test sketch
 
 ## NDI streaming
 

@@ -1,70 +1,55 @@
-const canvas = document.querySelector('#output-canvas');
-const context = canvas.getContext('2d');
-
-let outputState = {
-  active: false,
+let outputSize = {
   height: window.innerHeight || 720,
   width: window.innerWidth || 1280
 };
 
-function applyCanvasSize(width, height) {
-  canvas.width = width;
-  canvas.height = height;
-}
-
-function renderStandbyScreen() {
-  applyCanvasSize(window.innerWidth || 1280, window.innerHeight || 720);
-  context.setTransform(1, 0, 0, 1, 0, 0);
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = '#000';
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  const panelWidth = Math.min(760, canvas.width - 80);
-  const panelHeight = 220;
-  const panelX = (canvas.width - panelWidth) / 2;
-  const panelY = (canvas.height - panelHeight) / 2;
-
-  context.strokeStyle = '#333';
-  context.lineWidth = 2;
-  context.strokeRect(panelX, panelY, panelWidth, panelHeight);
-
-  context.fillStyle = '#fff';
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-
-  context.font = '16px sans-serif';
-  context.fillText('NDI ENABLED REALTIME VIDEO DEVELOPMENT KIT', canvas.width / 2, panelY + 42);
-
-  context.font = '34px sans-serif';
-  context.fillText('Output Standby', canvas.width / 2, panelY + 92);
-
-  context.font = '20px sans-serif';
-  context.fillText('No active output session.', canvas.width / 2, panelY + 138);
-
-  context.font = '18px sans-serif';
-  context.fillText('Use Start Output in the control window to arm the canvas and NDI feed.', canvas.width / 2, panelY + 176);
-
-  context.font = '16px sans-serif';
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  context.fillText('Status: Idle', canvas.width / 2, panelY + 208);
-}
-
-function renderOutputFrame() {
-  applyCanvasSize(outputState.width, outputState.height);
-  context.setTransform(1, 0, 0, 1, 0, 0);
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = '#000';
-  context.fillRect(0, 0, canvas.width, canvas.height);
-}
-
-function render() {
-  if (!outputState.active) {
-    renderStandbyScreen();
+function applySketchSize(p5, width, height) {
+  if (!p5.canvas) {
     return;
   }
 
-  renderOutputFrame();
+  if (p5.width === width && p5.height === height) {
+    return;
+  }
+
+  p5.resizeCanvas(width, height, true);
+}
+
+function drawSketch(p5) {
+  applySketchSize(p5, outputSize.width, outputSize.height);
+
+  const time = p5.millis() * 0.001;
+  const centerX = p5.width * 0.5;
+  const centerY = p5.height * 0.5;
+
+  p5.background(6, 8, 16);
+
+  p5.noStroke();
+  p5.fill(255, 240, 200, 18);
+  p5.circle(centerX, centerY, Math.min(p5.width, p5.height) * 0.78);
+
+  for (let index = 0; index < 8; index += 1) {
+    const angle = time * 0.7 + index * (p5.TWO_PI / 8);
+    const orbit = Math.min(p5.width, p5.height) * (0.18 + index * 0.03);
+    const x = centerX + Math.cos(angle) * orbit;
+    const y = centerY + Math.sin(angle * 1.4) * orbit * 0.55;
+    const size = 28 + index * 10 + Math.sin(time * 2 + index) * 6;
+
+    p5.fill(255 - index * 18, 200 - index * 10, 120 + index * 12, 180);
+    p5.circle(x, y, size);
+  }
+
+  p5.stroke(255, 255, 255, 90);
+  p5.strokeWeight(1);
+  p5.line(0, centerY, p5.width, centerY);
+  p5.line(centerX, 0, centerX, p5.height);
+
+  p5.noStroke();
+  p5.fill(255);
+  p5.textAlign(p5.LEFT, p5.TOP);
+  p5.textSize(18);
+  p5.text('p5.js test sketch', 24, 20);
+  p5.text(`${outputSize.width} x ${outputSize.height}`, 24, 44);
 }
 
 async function fetchJson(url) {
@@ -77,23 +62,38 @@ async function fetchJson(url) {
   return response.json();
 }
 
-async function refreshOutputState() {
-  outputState = await fetchJson('/api/output/status');
-  render();
+async function refreshOutputSize() {
+  const nextState = await fetchJson('/api/output/status');
+  outputSize = {
+    height: Number(nextState.height) || outputSize.height,
+    width: Number(nextState.width) || outputSize.width
+  };
+}
+
+function createSketch() {
+  new window.p5((p5) => {
+    p5.setup = () => {
+      p5.createCanvas(outputSize.width, outputSize.height);
+      p5.frameRate(60);
+      p5.textFont('sans-serif');
+    };
+
+    p5.draw = () => {
+      drawSketch(p5);
+    };
+
+    p5.windowResized = () => {
+      applySketchSize(p5, outputSize.width, outputSize.height);
+    };
+  });
 }
 
 async function initialise() {
-  renderStandbyScreen();
-  await refreshOutputState();
-
-  window.addEventListener('resize', () => {
-    if (!outputState.active) {
-      renderStandbyScreen();
-    }
-  });
+  await refreshOutputSize();
+  createSketch();
 
   window.setInterval(() => {
-    refreshOutputState().catch(() => {});
+    refreshOutputSize().catch(() => {});
   }, 1000);
 }
 
