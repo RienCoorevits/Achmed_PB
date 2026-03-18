@@ -56,7 +56,10 @@ The control window now handles:
 - control and output routing
 - output start and stop
 - output width and height
+- output width and height presets
 - NDI source name and frame rate
+
+Paired controls inside a field row are laid out tightly next to each other instead of stretching across the full column width.
 
 The output route is only a single HTML canvas. When output is inactive it now shows a standby slate with a clear operator-facing idle message. When output is active it switches to a blank black frame at the started size. This keeps the output surface clean while the real rendering system is redeveloped.
 
@@ -135,10 +138,6 @@ For Electron development:
 
 - frontend changes in `public/` live-update in the Electron control window through Vite HMR
 - Electron/server-side changes under `electron/` can be auto-restarted with `npm run dev:electron`
-
-## Documentation rule
-
-From this point forward, every substantive code change should be reflected in this README so the repository description stays current.
 
 ## Git workflow
 
