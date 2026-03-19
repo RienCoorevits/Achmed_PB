@@ -17,6 +17,8 @@ Rebuild baseline kit for generative video development.
 
 ## Run
 
+Open this repository in your IDE of choice, open terminal to run commands
+
 ```bash
 npm install
 npm start
@@ -24,15 +26,13 @@ npm start
 
 `npm start` runs the browser preview server.
 
-In development, the existing app server now hosts Vite in middleware mode. That means `/control` and `/output` stay on the same server origin as the API routes, while HTML, CSS, and JavaScript changes live-update during development.
-
-For the Electron control window:
+OR For the Electron control window:
 
 ```bash
 npm run start:electron
 ```
 
-For the Electron dev loop with auto-restart on Electron/main-server file changes:
+OR For the Electron dev loop with auto-restart on Electron/main-server file changes:
 
 ```bash
 npm run dev:electron
@@ -62,16 +62,6 @@ The control window now handles:
 The output route is only a single HTML canvas driven by p5.js. The current output renderer is a simple test sketch that lives directly in `public/output.js`.
 
 The output now includes a test p5.js sketch loaded from the custom [libraries](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries) folder. This is the reference pattern for adding more browser-side libraries to the project.
-
-Output width and height are a shared setting:
-
-- `Start Output` locks the current width and height while output is active
-- while output is stopped, width and height can be changed again before the next start
-- `public/output.js` keeps a single size-sync path so an already-open output page picks up the next started resolution between runs
-- the hidden Electron offscreen renderer uses that same active output size
-- the NDI sender uses that same active output size
-
-This keeps browser output and NDI output matched at all times.
 
 ## Using this as a generative visual storytelling kit
 
