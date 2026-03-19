@@ -1,21 +1,10 @@
-let outputSize = {
+const DEFAULT_OUTPUT_SIZE = {
   height: 720,
   width: 1280
 };
 
+let currentOutputSize = DEFAULT_OUTPUT_SIZE;
 let sketchInstance = null;
-
-function applySketchSize(width, height) {
-  if (!sketchInstance || !sketchInstance.canvas) {
-    return;
-  }
-
-  if (sketchInstance.width === width && sketchInstance.height === height) {
-    return;
-  }
-
-  sketchInstance.resizeCanvas(width, height, true);
-}
 
 function drawSketch(p5) {
   const time = p5.millis() * 0.001;
@@ -62,22 +51,38 @@ async function fetchJson(url) {
   return response.json();
 }
 
-async function refreshOutputSize() {
+async function fetchOutputSize() {
   const outputState = await fetchJson('/api/output/status');
-  outputSize = {
-    height: Number(outputState.height) || outputSize.height,
-    width: Number(outputState.width) || outputSize.width
-  };
 
-  applySketchSize(outputSize.width, outputSize.height);
+  return {
+    height: Number(outputState.height) || currentOutputSize.height,
+    width: Number(outputState.width) || currentOutputSize.width
+  };
+}
+
+function syncSketchSize(nextOutputSize) {
+  currentOutputSize = nextOutputSize;
+
+  if (!sketchInstance || !sketchInstance.canvas) {
+    return;
+  }
+
+  if (
+    sketchInstance.width === currentOutputSize.width &&
+    sketchInstance.height === currentOutputSize.height
+  ) {
+    return;
+  }
+
+  sketchInstance.resizeCanvas(currentOutputSize.width, currentOutputSize.height, true);
 }
 
 async function initialise() {
-  await refreshOutputSize();
+  currentOutputSize = await fetchOutputSize();
 
   sketchInstance = new window.p5((p5) => {
     p5.setup = () => {
-      p5.createCanvas(outputSize.width, outputSize.height);
+      p5.createCanvas(currentOutputSize.width, currentOutputSize.height);
       p5.frameRate(60);
       p5.textFont('sans-serif');
     };
@@ -88,7 +93,18 @@ async function initialise() {
   });
 
   window.setInterval(() => {
-    refreshOutputSize().catch(() => {});
+    fetchOutputSize()
+      .then((nextOutputSize) => {
+        if (
+          nextOutputSize.width === currentOutputSize.width &&
+          nextOutputSize.height === currentOutputSize.height
+        ) {
+          return;
+        }
+
+        syncSketchSize(nextOutputSize);
+      })
+      .catch(() => {});
   }, 1000);
 }
 

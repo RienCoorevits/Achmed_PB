@@ -59,7 +59,7 @@ The control window now handles:
 - output width and height presets
 - NDI source name and frame rate
 
-The output route is only a single HTML canvas driven by p5.js. The current output renderer is a simple test sketch and no longer branches into a separate idle slate path inside `output.js`.
+The output route is only a single HTML canvas driven by p5.js. The current output renderer is a simple test sketch that lives directly in `public/output.js`.
 
 The output now includes a test p5.js sketch loaded from the custom [libraries](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries) folder. This is the reference pattern for adding more browser-side libraries to the project.
 
@@ -67,7 +67,7 @@ Output width and height are a shared setting:
 
 - `Start Output` locks the current width and height while output is active
 - while output is stopped, width and height can be changed again before the next start
-- `public/output.js` follows output-size changes between runs so an already-open output page picks up the next started resolution
+- `public/output.js` keeps a single size-sync path so an already-open output page picks up the next started resolution between runs
 - the hidden Electron offscreen renderer uses that same active output size
 - the NDI sender uses that same active output size
 
@@ -81,12 +81,12 @@ Use it like this:
 
 1. Run `npm start` when you want the fastest browser-only development loop.
 2. Open `/control` for transport controls and `/output` for the actual stage surface.
-3. Build the visual storytelling system in `public/output.js`, because that file owns the output canvas.
+3. Build the visual storytelling system in `public/output.js`, because that file owns the output canvas and drawing logic.
 4. Switch to `npm run start:electron` when you need the Electron control window and NDI output.
 
 The practical division of responsibility is:
 
-- `public/output.js` is the performance surface. Put scene timing, animation, drawing, transitions, procedural image generation, text treatment, and composition logic here.
+- `public/output.js` is the output surface. It owns size sync, canvas creation, the p5 lifecycle, and the drawing logic.
 - `public/output.html` is the minimal output shell. Keep it lean unless the renderer truly needs more DOM structure.
 - `libraries/` is the vendored browser-library area. Put custom frontend libraries here when they should be served at `/libraries/*`.
 - `public/control.html` and `public/control.js` are the operator surface. Add knobs, toggles, cues, scene selectors, or debug readouts here.
@@ -117,7 +117,7 @@ Current example:
 
 - [libraries/p5/p5.min.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/libraries/p5/p5.min.js) is served at `/libraries/p5/p5.min.js`
 - [public/output.html](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.html) loads that file directly
-- [public/output.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.js) uses p5 to render the current test sketch
+- [public/output.js](/Users/u0127995/Documents/Developer/De%20Avonturen%20van%20Prins%20Achmed/Achmed_0.0.1_PB2/public/output.js) boots the p5 renderer, keeps the canvas size in sync, and renders the current test sketch
 
 ## NDI streaming
 
