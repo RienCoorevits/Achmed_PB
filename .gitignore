@@ -8,3 +8,5 @@ coverage/
 .env
 .env.*
 Images/
+.python-packages/
+__pycache__/

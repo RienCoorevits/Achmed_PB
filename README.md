@@ -14,7 +14,15 @@ Rebuild baseline kit for generative video development.
 
 - NDI SDK for Apple installed under `/Library/NDI SDK for Apple`
 - Xcode command line toolchain available so `clang` can build the helper
-- `ffmpeg` installed and available on `PATH` for the media CLI tools
+- `ffmpeg` is required for `trim`, `frames`, `contact-sheet`, `gif`, and `transcode`
+- `ffprobe` is required for `probe`
+- on macOS with Homebrew: `brew install ffmpeg`
+
+Install the local Python dependencies used by the rigid stabilizer:
+
+```bash
+python3 -m pip install --target .python-packages -r requirements-media.txt
+```
 
 ## Run
 
@@ -51,9 +59,11 @@ For a LAN-accessible output route:
 npm run start:network
 ```
 
-## Media CLI
+# Media CLI
 
-This repo includes a small command-line media toolkit for the video files under `Images/Scenes/`.
+This repo includes a small command-line media toolkit for the video files under `Images/Video/`.
+
+## Helper functions
 
 Run help:
 
@@ -76,47 +86,8 @@ npm run media -- probe Images/Scenes/Scene1.mp4
 Trim a clip:
 
 ```bash
-npm run media -- trim Images/Videos/Scenes/Scene1.mp4 --start 00:00:05 --duration 4 --output output/scene1-trim.mp4
+npm run media -- trim Images/Video/Scenes/Scene1.mp4 --start 00:00:05 --duration 4 --output output/scene1-trim.mp4
 ```
-
-Extract frames:
-
-```bash
-npm run media -- video-to-sequence Images/Video/Scenes
-```
-
-Single file example:
-
-```bash
-npm run media -- video-to-sequence "Images/Video/Locations/Location 2.mp4" --fps 12 --format jpg
-```
-
-Output path example:
-
-```text
-Images/Video/Scenes/Scene1.mp4
--> Images/Sequences/Scenes/Scene1/frame-00001.png
-```
-
-Build a temporal-average clean plate:
-
-```bash
-npm run media -- clean-plate Images/Video/Scenes/Scene1.mp4 --method median --samples 24
-```
-
-Batch clean plates for a folder:
-
-```bash
-npm run media -- clean-plate Images/Video/Scenes --method median --samples 16 --width 1280
-```
-
-Clean plate note:
-
-- `--method median` is now the better default for actor removal
-- `--method average` is still available, but it tends to leave dirtier ghosts
-- both methods work best when actors keep moving through the shot
-- if a character stands in one place for too long, you will still see residue in the plate
-
 Build a contact sheet:
 
 ```bash
@@ -135,14 +106,66 @@ Transcode to a runtime-friendly MP4:
 npm run media -- transcode Images/Scenes/Scene1.mp4 --width 1280 --fps 24 --output output/scene1-h264.mp4
 ```
 
-Requirements:
+## Image Sequencing
 
-- `ffmpeg` is required for `trim`, `frames`, `contact-sheet`, `gif`, and `transcode`
-- `ffprobe` is required for `probe`
-- `list` works without ffmpeg
-- on macOS with Homebrew: `brew install ffmpeg`
+Convert videos into image sequences:
 
-## Current baseline
+```bash
+npm run media -- video-to-sequence Images/Video/Scenes
+```
+
+Single file example:
+
+```bash
+npm run media -- video-to-sequence "Images/Video/Locations/Location 2.mp4" --fps 12 --format jpg
+```
+
+## Stabilizing
+this method currently is to timmid
+
+Stabilize a shot into `Images/Stabilize/...`:
+
+```bash
+npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4
+```
+
+More conservative clamp settings for film-weave style material:
+
+```bash
+npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4 --smooth-radius 21 --max-shift-ratio 0.01 --max-rotation-deg 1.0
+```
+
+## Clean plate masking
+this method is currently to harsh
+
+Build the advanced masked clean plate from the stabilized result:
+
+```bash
+npm run media -- clean-plate-masked Images/Stabilize/Scenes/Scene1.mp4 --samples 24 --threshold 45 --grow 2
+```
+
+Batch stabilized outputs:
+
+```bash
+npm run media -- stabilize-shot Images/Video/Scenes
+```
+
+Batch masked clean plates from stabilized shots:
+
+```bash
+npm run media -- clean-plate-masked Images/Stabilize/Scenes --samples 16 --width 1280 --threshold 45 --grow 2
+```
+
+Advanced clean plate note:
+
+- the recommended flow is `stabilize-shot` first, then `clean-plate-masked`
+- `stabilize-shot` now uses rigid stabilization only: x/y drift plus rotation, with no perspective warp
+- it estimates euclidean motion, rejects large outlier jumps, and smooths the remaining motion before rendering the stabilized shot
+- `clean-plate-masked` samples the stabilized shot, thresholds dark silhouettes, expands the mask slightly, and rebuilds the plate from unmasked pixels
+- this is a better fit for Achmed-style silhouette footage than blind averaging
+- if a figure covers the same region for too much of the shot, you may still need manual cleanup
+
+# Current baseline
 
 The control window now handles:
 

@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 
-import { access, mkdir, readdir } from 'node:fs/promises';
+import { access, mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 
 const PROJECT_ROOT = process.cwd();
+const RIGID_STABILIZE_SCRIPT = path.join(PROJECT_ROOT, 'scripts', 'rigid_stabilize.py');
 const DEFAULT_MEDIA_DIR = 'Images/Scenes';
 const DEFAULT_VIDEO_ROOT = 'Images/Video';
+const DEFAULT_STABILIZE_ROOT = 'Images/Stabilize';
 const DEFAULT_SEQUENCE_ROOT = 'Images/Sequences';
 const DEFAULT_CLEAN_PLATE_ROOT = 'Images/CleanPlates';
+
 const MEDIA_EXTENSIONS = new Set([
   '.mp4',
   '.mov',
@@ -24,6 +27,7 @@ const MEDIA_EXTENSIONS = new Set([
   '.tif',
   '.tiff'
 ]);
+
 const VIDEO_EXTENSIONS = new Set([
   '.mp4',
   '.mov',
@@ -64,11 +68,16 @@ Commands:
 
   video-to-sequence <input-or-dir> [--fps <n>] [--format png|jpg]
       Convert a video or a folder of videos from ${DEFAULT_VIDEO_ROOT} into image sequences under ${DEFAULT_SEQUENCE_ROOT}.
-      The folder structure under Video is mirrored under Sequences, with one subfolder per source filename.
+
+  stabilize-shot <input-or-dir> [--width <px>] [--smooth-radius <n>] [--max-shift-ratio <n>] [--max-rotation-deg <n>]
+      Apply rigid x/y + rotation stabilization only, with no frame warping, from ${DEFAULT_VIDEO_ROOT} into ${DEFAULT_STABILIZE_ROOT}.
 
   clean-plate <input-or-dir> [--method median|average] [--samples <n>] [--start <time>] [--duration <time>] [--width <px>] [--format png|jpg]
-      Build a clean plate from a video or folder of videos in ${DEFAULT_VIDEO_ROOT}.
-      Outputs are mirrored under ${DEFAULT_CLEAN_PLATE_ROOT}.
+      Build a legacy temporal clean plate from ${DEFAULT_VIDEO_ROOT}.
+
+  clean-plate-masked <input-or-dir> [--samples <n>] [--start <time>] [--duration <time>] [--width <px>] [--format png|jpg] [--threshold <n>] [--grow <n>]
+      Build a masked clean plate from stabilized shots in ${DEFAULT_STABILIZE_ROOT}.
+      This is the recommended Achmed-oriented clean-plate workflow after rigid stabilization.
 
 Options:
   --help
@@ -83,9 +92,10 @@ Examples:
   npm run media -- gif Images/Scenes/Scene1.mp4 --start 2 --duration 3 --fps 10 --width 720 --output output/scene1.gif
   npm run media -- transcode Images/Scenes/Scene1.mp4 --width 1280 --fps 24 --output output/scene1-h264.mp4
   npm run media -- video-to-sequence Images/Video/Scenes
-  npm run media -- video-to-sequence Images/Video/Locations/'Location 2.mp4' --fps 12 --format jpg
-  npm run media -- clean-plate Images/Video/Scenes/Scene1.mp4 --method median --samples 24 --output output/scene1-clean-plate.png
-  npm run media -- clean-plate Images/Video/Scenes --samples 16 --width 1280
+  npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4
+  npm run media -- stabilize-shot Images/Video/Scenes/Scene1.mp4 --smooth-radius 21 --max-shift-ratio 0.01 --max-rotation-deg 1.0
+  npm run media -- clean-plate Images/Video/Scenes/Scene1.mp4 --method median --samples 24
+  npm run media -- clean-plate-masked Images/Stabilize/Scenes/Scene1.mp4 --samples 24 --threshold 45 --grow 2
 `.trim());
 }
 
@@ -175,6 +185,38 @@ function assertOption(options, name, message) {
   return value;
 }
 
+function parseTimeValue(value, label) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  const input = String(value).trim();
+
+  if (/^\d+(\.\d+)?$/.test(input)) {
+    return Number(input);
+  }
+
+  const parts = input.split(':').map((part) => Number(part));
+
+  if (parts.some((part) => !Number.isFinite(part) || part < 0)) {
+    throw new Error(`${label} must be a number of seconds or a HH:MM:SS value`);
+  }
+
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  }
+
+  throw new Error(`${label} must be a number of seconds or a HH:MM:SS value`);
+}
+
 function buildOutputPath(inputPath, options, fallbackSuffix) {
   if (options.output) {
     return resolveProjectPath(String(options.output));
@@ -204,33 +246,63 @@ function buildMirroredPath(inputAbsolutePath, sourceRoot, outputRoot, extension,
   return path.join(outputRootPath, relativeDirectory, `${basename}.${extension}`);
 }
 
+function buildMirroredSequenceDir(inputAbsolutePath) {
+  return buildMirroredPath(inputAbsolutePath, DEFAULT_VIDEO_ROOT, DEFAULT_SEQUENCE_ROOT, 'png', {
+    nestByBasename: true
+  });
+}
+
+function buildMirroredStabilizePath(inputAbsolutePath) {
+  return buildMirroredPath(inputAbsolutePath, DEFAULT_VIDEO_ROOT, DEFAULT_STABILIZE_ROOT, 'mp4');
+}
+
+function buildMirroredLegacyCleanPlatePath(inputAbsolutePath, format) {
+  const extension = format === 'jpeg' ? 'jpg' : format;
+  return buildMirroredPath(inputAbsolutePath, DEFAULT_VIDEO_ROOT, DEFAULT_CLEAN_PLATE_ROOT, extension);
+}
+
+function buildMirroredMaskedCleanPlatePath(inputAbsolutePath, format) {
+  const extension = format === 'jpeg' ? 'jpg' : format;
+  return buildMirroredPath(inputAbsolutePath, DEFAULT_STABILIZE_ROOT, DEFAULT_CLEAN_PLATE_ROOT, extension);
+}
+
 async function ensureParentDir(filePath) {
   await mkdir(path.dirname(filePath), {
     recursive: true
   });
 }
 
-function spawnCommand(command, args, { inheritStdio = true } = {}) {
+function spawnCommand(command, args, { inheritStdio = true, inputBuffer = null } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      stdio: inheritStdio ? 'inherit' : ['ignore', 'pipe', 'pipe']
+      stdio: inheritStdio ? ['pipe', 'inherit', 'inherit'] : ['pipe', 'pipe', 'pipe']
     });
 
-    let stdout = '';
-    let stderr = '';
+    const stdoutChunks = [];
+    const stderrChunks = [];
 
     if (!inheritStdio) {
       child.stdout.on('data', (chunk) => {
-        stdout += chunk.toString();
+        stdoutChunks.push(chunk);
       });
 
       child.stderr.on('data', (chunk) => {
-        stderr += chunk.toString();
+        stderrChunks.push(chunk);
       });
     }
 
     child.on('error', reject);
+
+    if (inputBuffer) {
+      child.stdin.write(inputBuffer);
+    }
+
+    child.stdin.end();
+
     child.on('exit', (code) => {
+      const stdout = Buffer.concat(stdoutChunks);
+      const stderr = Buffer.concat(stderrChunks);
+
       if (code === 0) {
         resolve({
           stderr,
@@ -239,7 +311,7 @@ function spawnCommand(command, args, { inheritStdio = true } = {}) {
         return;
       }
 
-      reject(new Error(stderr.trim() || `${command} exited with code ${code ?? 'unknown'}`));
+      reject(new Error(stderr.toString().trim() || `${command} exited with code ${code ?? 'unknown'}`));
     });
   });
 }
@@ -293,15 +365,341 @@ async function isDirectory(targetPath) {
   }
 }
 
-function buildMirroredSequenceDir(inputAbsolutePath) {
-  return buildMirroredPath(inputAbsolutePath, DEFAULT_VIDEO_ROOT, DEFAULT_SEQUENCE_ROOT, 'png', {
-    nestByBasename: true
+async function getVideoInfo(inputAbsolutePath) {
+  await ensureFfprobe();
+
+  const result = await spawnCommand('ffprobe', [
+    '-v',
+    'error',
+    '-print_format',
+    'json',
+    '-show_entries',
+    'stream=width,height:format=duration',
+    inputAbsolutePath
+  ], {
+    inheritStdio: false
   });
+
+  const parsed = JSON.parse(result.stdout.toString());
+  const videoStream = Array.isArray(parsed.streams)
+    ? parsed.streams.find((stream) => Number.isFinite(Number(stream.width)) && Number.isFinite(Number(stream.height)))
+    : null;
+  const durationSeconds = Number(parsed.format?.duration);
+
+  if (!videoStream || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    throw new Error(`Unable to determine video metadata for ${toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath))}`);
+  }
+
+  return {
+    durationSeconds,
+    height: Number(videoStream.height),
+    width: Number(videoStream.width)
+  };
 }
 
-function buildMirroredCleanPlatePath(inputAbsolutePath, format) {
-  const extension = format === 'jpeg' ? 'jpg' : format;
-  return buildMirroredPath(inputAbsolutePath, DEFAULT_VIDEO_ROOT, DEFAULT_CLEAN_PLATE_ROOT, extension);
+function computeScaledDimensions(width, height, targetWidth = null) {
+  if (!targetWidth) {
+    return {
+      height,
+      width
+    };
+  }
+
+  const scaledWidth = Math.max(2, Math.floor(Number(targetWidth) / 2) * 2);
+  const scaledHeight = Math.max(2, Math.floor((height * scaledWidth) / width / 2) * 2);
+
+  return {
+    height: scaledHeight,
+    width: scaledWidth
+  };
+}
+
+function parsePositiveInteger(value, label, { min = 1 } = {}) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue) || numericValue < min) {
+    throw new Error(`${label} must be at least ${min}`);
+  }
+
+  return Math.floor(numericValue);
+}
+
+function pixelLuma(red, green, blue) {
+  return red * 0.2126 + green * 0.7152 + blue * 0.0722;
+}
+
+function medianFromValues(values) {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  values.sort((left, right) => left - right);
+  return values[Math.floor(values.length / 2)];
+}
+
+function dilateMask(mask, width, height, radius) {
+  if (radius <= 0) {
+    return mask;
+  }
+
+  let source = mask;
+
+  for (let pass = 0; pass < radius; pass += 1) {
+    const target = new Uint8Array(source.length);
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const index = y * width + x;
+
+        if (source[index]) {
+          target[index] = 1;
+          continue;
+        }
+
+        let covered = 0;
+
+        for (let offsetY = -1; offsetY <= 1 && !covered; offsetY += 1) {
+          const nextY = y + offsetY;
+
+          if (nextY < 0 || nextY >= height) {
+            continue;
+          }
+
+          for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+            const nextX = x + offsetX;
+
+            if (nextX < 0 || nextX >= width) {
+              continue;
+            }
+
+            if (source[nextY * width + nextX]) {
+              covered = 1;
+              break;
+            }
+          }
+        }
+
+        target[index] = covered;
+      }
+    }
+
+    source = target;
+  }
+
+  return source;
+}
+
+function buildSilhouetteMask(rgbaFrame, width, height, threshold, grow) {
+  const mask = new Uint8Array(width * height);
+
+  for (let index = 0; index < width * height; index += 1) {
+    const pixelOffset = index * 4;
+    const luma = pixelLuma(
+      rgbaFrame[pixelOffset],
+      rgbaFrame[pixelOffset + 1],
+      rgbaFrame[pixelOffset + 2]
+    );
+
+    if (luma <= threshold) {
+      mask[index] = 1;
+    }
+  }
+
+  return dilateMask(mask, width, height, grow);
+}
+
+function composeMaskedMedianPlate(frames, masks, width, height) {
+  const output = new Uint8Array(width * height * 4);
+  const holes = new Uint8Array(width * height);
+
+  for (let index = 0; index < width * height; index += 1) {
+    const valuesR = [];
+    const valuesG = [];
+    const valuesB = [];
+
+    for (let frameIndex = 0; frameIndex < frames.length; frameIndex += 1) {
+      if (masks[frameIndex][index]) {
+        continue;
+      }
+
+      const pixelOffset = index * 4;
+      valuesR.push(frames[frameIndex][pixelOffset]);
+      valuesG.push(frames[frameIndex][pixelOffset + 1]);
+      valuesB.push(frames[frameIndex][pixelOffset + 2]);
+    }
+
+    const pixelOffset = index * 4;
+
+    if (valuesR.length === 0) {
+      holes[index] = 1;
+      output[pixelOffset + 3] = 255;
+      continue;
+    }
+
+    output[pixelOffset] = medianFromValues(valuesR);
+    output[pixelOffset + 1] = medianFromValues(valuesG);
+    output[pixelOffset + 2] = medianFromValues(valuesB);
+    output[pixelOffset + 3] = 255;
+  }
+
+  return {
+    holes,
+    output
+  };
+}
+
+function fillPlateHoles(output, holes, frames, width, height) {
+  const workingHoles = holes.slice();
+  let pass = 0;
+
+  while (pass < 32) {
+    let filledThisPass = 0;
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const index = y * width + x;
+
+        if (!workingHoles[index]) {
+          continue;
+        }
+
+        let red = 0;
+        let green = 0;
+        let blue = 0;
+        let count = 0;
+
+        for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+          const nextY = y + offsetY;
+
+          if (nextY < 0 || nextY >= height) {
+            continue;
+          }
+
+          for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+            const nextX = x + offsetX;
+
+            if (nextX < 0 || nextX >= width || (offsetX === 0 && offsetY === 0)) {
+              continue;
+            }
+
+            const neighborIndex = nextY * width + nextX;
+
+            if (workingHoles[neighborIndex]) {
+              continue;
+            }
+
+            const pixelOffset = neighborIndex * 4;
+            red += output[pixelOffset];
+            green += output[pixelOffset + 1];
+            blue += output[pixelOffset + 2];
+            count += 1;
+          }
+        }
+
+        if (count === 0) {
+          continue;
+        }
+
+        const pixelOffset = index * 4;
+        output[pixelOffset] = Math.round(red / count);
+        output[pixelOffset + 1] = Math.round(green / count);
+        output[pixelOffset + 2] = Math.round(blue / count);
+        output[pixelOffset + 3] = 255;
+        workingHoles[index] = 0;
+        filledThisPass += 1;
+      }
+    }
+
+    if (filledThisPass === 0) {
+      break;
+    }
+
+    pass += 1;
+  }
+
+  for (let index = 0; index < width * height; index += 1) {
+    if (!workingHoles[index]) {
+      continue;
+    }
+
+    const valuesR = [];
+    const valuesG = [];
+    const valuesB = [];
+
+    for (const frame of frames) {
+      const pixelOffset = index * 4;
+      valuesR.push(frame[pixelOffset]);
+      valuesG.push(frame[pixelOffset + 1]);
+      valuesB.push(frame[pixelOffset + 2]);
+    }
+
+    const pixelOffset = index * 4;
+    output[pixelOffset] = medianFromValues(valuesR);
+    output[pixelOffset + 1] = medianFromValues(valuesG);
+    output[pixelOffset + 2] = medianFromValues(valuesB);
+    output[pixelOffset + 3] = 255;
+  }
+}
+
+async function extractFrameRgba(inputAbsolutePath, timeSeconds, width = null) {
+  const filters = [];
+
+  if (width) {
+    filters.push(`scale=${Number(width)}:-2`);
+  }
+
+  const args = [
+    '-v',
+    'error',
+    '-ss',
+    String(timeSeconds),
+    '-i',
+    inputAbsolutePath,
+    '-frames:v',
+    '1'
+  ];
+
+  if (filters.length > 0) {
+    args.push('-vf', filters.join(','));
+  }
+
+  args.push(
+    '-pix_fmt',
+    'rgba',
+    '-f',
+    'rawvideo',
+    'pipe:1'
+  );
+
+  const result = await spawnCommand('ffmpeg', args, {
+    inheritStdio: false
+  });
+
+  return new Uint8Array(result.stdout);
+}
+
+async function writeRgbaImage(outputPath, rgbaBuffer, width, height) {
+  await ensureParentDir(outputPath);
+
+  await spawnCommand('ffmpeg', [
+    '-y',
+    '-f',
+    'rawvideo',
+    '-pix_fmt',
+    'rgba',
+    '-s',
+    `${width}x${height}`,
+    '-i',
+    'pipe:0',
+    '-frames:v',
+    '1',
+    '-update',
+    '1',
+    outputPath
+  ], {
+    inheritStdio: false,
+    inputBuffer: Buffer.from(rgbaBuffer)
+  });
 }
 
 async function handleList(targetDir) {
@@ -338,30 +736,7 @@ async function handleProbe(inputPath) {
     inheritStdio: false
   });
 
-  console.log(result.stdout.trim());
-}
-
-async function getDurationSeconds(inputAbsolutePath) {
-  await ensureFfprobe();
-
-  const result = await spawnCommand('ffprobe', [
-    '-v',
-    'error',
-    '-show_entries',
-    'format=duration',
-    '-of',
-    'default=noprint_wrappers=1:nokey=1',
-    inputAbsolutePath
-  ], {
-    inheritStdio: false
-  });
-  const durationSeconds = Number(result.stdout.trim());
-
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    throw new Error(`Unable to determine duration for ${toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath))}`);
-  }
-
-  return durationSeconds;
+  console.log(result.stdout.toString().trim());
 }
 
 async function handleTrim(inputPath, options) {
@@ -481,11 +856,7 @@ async function handleTranscode(inputPath, options) {
     filters.push(`fps=${Number(options.fps)}`);
   }
 
-  const args = [
-    '-y',
-    '-i',
-    absoluteInputPath
-  ];
+  const args = ['-y', '-i', absoluteInputPath];
 
   if (filters.length > 0) {
     args.push('-vf', filters.join(','));
@@ -562,7 +933,93 @@ async function handleVideoToSequence(inputPath, options) {
   }
 }
 
-async function createCleanPlate(inputAbsolutePath, options) {
+async function stabilizeShot(inputAbsolutePath, options) {
+  const outputPath = options.output
+    ? resolveProjectPath(String(options.output))
+    : buildMirroredStabilizePath(inputAbsolutePath);
+  const smoothRadius = options['smooth-radius']
+    ? parsePositiveInteger(options['smooth-radius'], 'stabilize-shot --smooth-radius')
+    : 15;
+  const temporaryOutputPath = `${outputPath}.silent.mp4`;
+
+  await ensureParentDir(outputPath);
+
+  try {
+    await spawnCommand('python3', [
+      RIGID_STABILIZE_SCRIPT,
+      '--input',
+      inputAbsolutePath,
+      '--output',
+      temporaryOutputPath,
+      '--smooth-radius',
+      String(smoothRadius),
+      ...(options.width ? ['--width', String(Number(options.width))] : []),
+      ...(options['max-shift-ratio'] ? ['--max-shift-ratio', String(Number(options['max-shift-ratio']))] : []),
+      ...(options['max-rotation-deg'] ? ['--max-rotation-deg', String(Number(options['max-rotation-deg']))] : [])
+    ]);
+
+    await spawnCommand('ffmpeg', [
+      '-y',
+      '-i',
+      temporaryOutputPath,
+      '-i',
+      inputAbsolutePath,
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a?',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-movflags',
+      '+faststart',
+      outputPath
+    ]);
+  } finally {
+    if (await pathExists(temporaryOutputPath)) {
+      await rm(temporaryOutputPath, {
+        force: true
+      });
+    }
+  }
+
+  console.log(`Wrote ${toPosix(path.relative(PROJECT_ROOT, outputPath))}`);
+}
+
+async function handleStabilizeShot(inputPath, options) {
+  await ensureFfmpeg();
+
+  const targetPath = await validateInputPath(inputPath || DEFAULT_VIDEO_ROOT);
+  const targetIsDirectory = await isDirectory(targetPath);
+
+  if (!targetIsDirectory) {
+    if (!VIDEO_EXTENSIONS.has(path.extname(targetPath).toLowerCase())) {
+      throw new Error('stabilize-shot input file must be a supported video format');
+    }
+
+    await stabilizeShot(targetPath, options);
+    return;
+  }
+
+  const videoFiles = await collectVideoFiles(targetPath);
+
+  if (videoFiles.length === 0) {
+    console.log('No video files found.');
+    return;
+  }
+
+  for (const filePath of videoFiles) {
+    await stabilizeShot(filePath, {
+      ...options,
+      output: undefined
+    });
+  }
+}
+
+async function createLegacyCleanPlate(inputAbsolutePath, options) {
   const format = String(options.format || 'png').toLowerCase();
   const samples = options.samples ? Number(options.samples) : 24;
   const method = String(options.method || 'median').toLowerCase();
@@ -581,19 +1038,16 @@ async function createCleanPlate(inputAbsolutePath, options) {
 
   const outputPath = options.output
     ? resolveProjectPath(String(options.output))
-    : buildMirroredCleanPlatePath(inputAbsolutePath, format);
+    : buildMirroredLegacyCleanPlatePath(inputAbsolutePath, format);
 
   await ensureParentDir(outputPath);
 
-  const fullDurationSeconds = await getDurationSeconds(inputAbsolutePath);
-  const startSeconds = options.start ? Number(options.start) : 0;
-  const plateDurationSeconds = options.duration ? Number(options.duration) : Math.max(0, fullDurationSeconds - startSeconds);
+  const videoInfo = await getVideoInfo(inputAbsolutePath);
+  const startSeconds = parseTimeValue(options.start, 'clean-plate --start') ?? 0;
+  const plateDurationSeconds = parseTimeValue(options.duration, 'clean-plate --duration')
+    ?? Math.max(0, videoInfo.durationSeconds - startSeconds);
 
-  if (!Number.isFinite(startSeconds) || startSeconds < 0) {
-    throw new Error('clean-plate --start must be a non-negative number of seconds');
-  }
-
-  if (!Number.isFinite(plateDurationSeconds) || plateDurationSeconds <= 0) {
+  if (plateDurationSeconds <= 0) {
     throw new Error('clean-plate --duration must be greater than 0 seconds');
   }
 
@@ -618,7 +1072,7 @@ async function createCleanPlate(inputAbsolutePath, options) {
 
     args.push('-i', inputAbsolutePath);
 
-    if (plateDurationSeconds < fullDurationSeconds) {
+    if (plateDurationSeconds < videoInfo.durationSeconds) {
       args.push('-t', String(plateDurationSeconds));
     }
 
@@ -688,7 +1142,7 @@ async function handleCleanPlate(inputPath, options) {
       throw new Error('clean-plate input file must be a supported video format');
     }
 
-    await createCleanPlate(targetPath, options);
+    await createLegacyCleanPlate(targetPath, options);
     return;
   }
 
@@ -700,7 +1154,87 @@ async function handleCleanPlate(inputPath, options) {
   }
 
   for (const filePath of videoFiles) {
-    await createCleanPlate(filePath, {
+    await createLegacyCleanPlate(filePath, {
+      ...options,
+      output: undefined
+    });
+  }
+}
+
+async function createMaskedCleanPlate(inputAbsolutePath, options) {
+  const format = String(options.format || 'png').toLowerCase();
+  const threshold = options.threshold ? Number(options.threshold) : 45;
+  const grow = options.grow ? parsePositiveInteger(options.grow, 'clean-plate-masked --grow') : 2;
+  const samples = options.samples ? parsePositiveInteger(options.samples, 'clean-plate-masked --samples', { min: 3 }) : 24;
+
+  if (!['png', 'jpg', 'jpeg'].includes(format)) {
+    throw new Error('clean-plate-masked --format must be png, jpg, or jpeg');
+  }
+
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 255) {
+    throw new Error('clean-plate-masked --threshold must be between 0 and 255');
+  }
+
+  const outputPath = options.output
+    ? resolveProjectPath(String(options.output))
+    : buildMirroredMaskedCleanPlatePath(inputAbsolutePath, format);
+
+  const videoInfo = await getVideoInfo(inputAbsolutePath);
+  const startSeconds = parseTimeValue(options.start, 'clean-plate-masked --start') ?? 0;
+  const plateDurationSeconds = parseTimeValue(options.duration, 'clean-plate-masked --duration')
+    ?? Math.max(0, videoInfo.durationSeconds - startSeconds);
+
+  if (plateDurationSeconds <= 0) {
+    throw new Error('clean-plate-masked --duration must be greater than 0 seconds');
+  }
+
+  const scaledSize = computeScaledDimensions(videoInfo.width, videoInfo.height, options.width ? Number(options.width) : null);
+  const frames = [];
+  const masks = [];
+
+  for (let index = 0; index < samples; index += 1) {
+    const ratio = samples === 1 ? 0.5 : (index + 0.5) / samples;
+    const sampleTime = startSeconds + plateDurationSeconds * ratio;
+    const frame = await extractFrameRgba(inputAbsolutePath, sampleTime, scaledSize.width);
+
+    if (frame.length !== scaledSize.width * scaledSize.height * 4) {
+      throw new Error(`Unexpected raw frame size for ${toPosix(path.relative(PROJECT_ROOT, inputAbsolutePath))}`);
+    }
+
+    frames.push(frame);
+    masks.push(buildSilhouetteMask(frame, scaledSize.width, scaledSize.height, threshold, grow));
+  }
+
+  const { holes, output } = composeMaskedMedianPlate(frames, masks, scaledSize.width, scaledSize.height);
+  fillPlateHoles(output, holes, frames, scaledSize.width, scaledSize.height);
+  await writeRgbaImage(outputPath, output, scaledSize.width, scaledSize.height);
+  console.log(`Wrote ${toPosix(path.relative(PROJECT_ROOT, outputPath))}`);
+}
+
+async function handleCleanPlateMasked(inputPath, options) {
+  await ensureFfmpeg();
+
+  const targetPath = await validateInputPath(inputPath || DEFAULT_STABILIZE_ROOT);
+  const targetIsDirectory = await isDirectory(targetPath);
+
+  if (!targetIsDirectory) {
+    if (!VIDEO_EXTENSIONS.has(path.extname(targetPath).toLowerCase())) {
+      throw new Error('clean-plate-masked input file must be a supported video format');
+    }
+
+    await createMaskedCleanPlate(targetPath, options);
+    return;
+  }
+
+  const videoFiles = await collectVideoFiles(targetPath);
+
+  if (videoFiles.length === 0) {
+    console.log('No video files found.');
+    return;
+  }
+
+  for (const filePath of videoFiles) {
+    await createMaskedCleanPlate(filePath, {
       ...options,
       output: undefined
     });
@@ -779,8 +1313,18 @@ async function main() {
     return;
   }
 
+  if (command === 'stabilize-shot') {
+    await handleStabilizeShot(positional[0] || DEFAULT_VIDEO_ROOT, options);
+    return;
+  }
+
   if (command === 'clean-plate') {
     await handleCleanPlate(positional[0] || DEFAULT_VIDEO_ROOT, options);
+    return;
+  }
+
+  if (command === 'clean-plate-masked') {
+    await handleCleanPlateMasked(positional[0] || DEFAULT_STABILIZE_ROOT, options);
     return;
   }
 
