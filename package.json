@@ -7,6 +7,7 @@
   "scripts": {
     "build:ndi-helper": "node scripts/build-ndi-helper.js",
     "dev:electron": "nodemon --watch electron --watch scripts/start-electron.js --watch package.json --ext js,mjs,cjs,json --exec \"node scripts/start-electron.js\"",
+    "media": "node scripts/media-cli.js",
     "start": "node scripts/preview.js",
     "start:electron": "node scripts/start-electron.js",
     "start:network": "node scripts/preview.js --host=0.0.0.0 --port=3030",

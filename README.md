@@ -14,6 +14,7 @@ Rebuild baseline kit for generative video development.
 
 - NDI SDK for Apple installed under `/Library/NDI SDK for Apple`
 - Xcode command line toolchain available so `clang` can build the helper
+- `ffmpeg` installed and available on `PATH` for the media CLI tools
 
 ## Run
 
@@ -49,6 +50,78 @@ For a LAN-accessible output route:
 ```bash
 npm run start:network
 ```
+
+## Media CLI
+
+This repo includes a small command-line media toolkit for the video files under `Images/Scenes/`.
+
+Run help:
+
+```bash
+npm run media -- --help
+```
+
+List scene files:
+
+```bash
+npm run media -- list
+```
+
+Probe one file:
+
+```bash
+npm run media -- probe Images/Scenes/Scene1.mp4
+```
+
+Trim a clip:
+
+```bash
+npm run media -- trim Images/Videos/Scenes/Scene1.mp4 --start 00:00:05 --duration 4 --output output/scene1-trim.mp4
+```
+
+Extract frames:
+
+```bash
+npm run media -- video-to-sequence Images/Video/Scenes
+```
+
+Single file example:
+
+```bash
+npm run media -- video-to-sequence "Images/Video/Locations/Location 2.mp4" --fps 12 --format jpg
+```
+
+Output path example:
+
+```text
+Images/Video/Scenes/Scene1.mp4
+-> Images/Sequences/Scenes/Scene1/frame-00001.png
+```
+
+Build a contact sheet:
+
+```bash
+npm run media -- contact-sheet Images/Scenes/Scene1.mp4 --columns 4 --rows 3 --output output/scene1-sheet.jpg
+```
+
+Export a GIF:
+
+```bash
+npm run media -- gif Images/Scenes/Scene1.mp4 --start 2 --duration 3 --fps 10 --width 720 --output output/scene1.gif
+```
+
+Transcode to a runtime-friendly MP4:
+
+```bash
+npm run media -- transcode Images/Scenes/Scene1.mp4 --width 1280 --fps 24 --output output/scene1-h264.mp4
+```
+
+Requirements:
+
+- `ffmpeg` is required for `trim`, `frames`, `contact-sheet`, `gif`, and `transcode`
+- `ffprobe` is required for `probe`
+- `list` works without ffmpeg
+- on macOS with Homebrew: `brew install ffmpeg`
 
 ## Current baseline
 
@@ -139,4 +212,3 @@ For Electron development:
 
 - frontend changes in `public/` live-update in the Electron control window through Vite HMR
 - Electron/server-side changes under `electron/` can be auto-restarted with `npm run dev:electron`
-
